@@ -244,6 +244,15 @@ func (c *Config) connStr(database string) string {
 		host = strings.ReplaceAll(host, ":", "/")
 	}
 
+	if c.Scheme == "gcpalloydb" {
+		connStr := fmt.Sprintf("host=%s user=%s password=%s dbname=%s sslmode=disable",
+			host,
+			url.PathEscape(c.Username),
+			url.PathEscape(c.Password),
+			database)
+		return connStr
+	}
+
 	connStr := fmt.Sprintf(
 		"%s://%s:%s@%s:%d/%s?%s",
 		c.Scheme,
@@ -278,9 +287,12 @@ func (c *Client) Connect() (*DBConnection, error) {
 
 		var db *sql.DB
 		var err error
-		if c.config.Scheme == "postgres" {
+		switch c.config.Scheme {
+		case "postgres":
 			db, err = sql.Open(proxyDriverName, dsn)
-		} else {
+		case "gcpalloydb":
+			db, err = sql.Open(c.config.Scheme, dsn)
+		default:
 			db, err = postgres.Open(context.Background(), dsn)
 		}
 

@@ -3,9 +3,13 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
+
+	"cloud.google.com/go/alloydbconn"
+	"cloud.google.com/go/alloydbconn/driver/pgxv5"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"os"
 
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -34,6 +38,7 @@ func Provider() *schema.Provider {
 					"postgres",
 					"awspostgres",
 					"gcppostgres",
+					"gcpalloydb",
 				}, false),
 			},
 			"host": {
@@ -348,8 +353,16 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		}
 	}
 
-	if config.Scheme == "gcppostgres" {
+	if strings.HasPrefix(config.Scheme, "gcp") {
 		if err := createGoogleCredsFileIfNeeded(); err != nil {
+			return nil, err
+		}
+	}
+	if config.Scheme == "gcpalloydb" {
+		_, err := pgxv5.RegisterDriver(config.Scheme, alloydbconn.WithDefaultDialOptions(
+			alloydbconn.WithPublicIP(),
+		))
+		if err != nil {
 			return nil, err
 		}
 	}
