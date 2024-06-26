@@ -160,6 +160,38 @@ func Provider() *schema.Provider {
 				},
 				MaxItems: 1,
 			},
+			"ssh": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Description: "SSH tunneling configuration",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"destination": {
+							Type:        schema.TypeString,
+							Description: "SSH destination to tunnel through ( [user@]hostname[:port] )",
+							Required:    true,
+						},
+						"use_agent": {
+							Type:        schema.TypeBool,
+							Description: "Using ssh agent",
+							Optional:    true,
+						},
+						"private_key": {
+							Type:        schema.TypeString,
+							Description: "ssh private key",
+							Optional:    true,
+							Sensitive:   true,
+						},
+						"password": {
+							Type:        schema.TypeString,
+							Description: "SSH user password",
+							Optional:    true,
+							Sensitive:   true,
+						},
+					},
+				},
+				MaxItems: 1,
+			},
 			"sslrootcert": {
 				Type:        schema.TypeString,
 				Description: "The SSL server root certificate file path. The file must contain PEM encoded data.",
@@ -349,6 +381,17 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 				CertificatePath: spec["cert"].(string),
 				KeyPath:         spec["key"].(string),
 				SSLInline:       spec["sslinline"].(bool),
+			}
+		}
+	}
+
+	if value, ok := d.GetOk("ssh"); ok {
+		if spec, ok := value.([]interface{})[0].(map[string]interface{}); ok {
+			config.SSHTunnel = &SSHTunnelConfig{
+				Destination: spec["destination"].(string),
+				UseAgent:    spec["use_agent"].(bool),
+				Password:    spec["password"].(string),
+				PrivateKey:  spec["private_key"].(string),
 			}
 		}
 	}

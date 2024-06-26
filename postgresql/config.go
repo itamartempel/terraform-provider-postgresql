@@ -8,13 +8,16 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/blang/semver"
+	"github.com/elliotchance/sshtunnel"
 	_ "github.com/lib/pq" // PostgreSQL db
 	"gocloud.dev/postgres"
 	_ "gocloud.dev/postgres/awspostgres"
 	_ "gocloud.dev/postgres/gcppostgres"
+	"golang.org/x/crypto/ssh"
 )
 
 type featureName uint
@@ -155,6 +158,14 @@ type ClientCertificateConfig struct {
 	SSLInline       bool
 }
 
+type SSHTunnelConfig struct {
+	Destination string
+	UseAgent    bool
+	Password    string
+	PrivateKey  string
+	LocalPort   int
+}
+
 // Config - provider config
 type Config struct {
 	Scheme            string
@@ -172,6 +183,7 @@ type Config struct {
 	ExpectedVersion   semver.Version
 	SSLClientCert     *ClientCertificateConfig
 	SSLRootCertPath   string
+	SSHTunnel         *SSHTunnelConfig
 }
 
 // Client struct holding connection string
@@ -180,6 +192,8 @@ type Client struct {
 	config Config
 
 	databaseName string
+
+	tunnel *sshtunnel.SSHTunnel
 }
 
 // NewClient returns client config for the specified database.
@@ -238,6 +252,7 @@ func (c *Config) connParams() []string {
 
 func (c *Config) connStr(database string) string {
 	host := c.Host
+	port := c.Port
 	// For GCP, support both project/region/instance and project:region:instance
 	// (The second one allows to use the output of google_sql_database_instance as host
 	if c.Scheme == "gcppostgres" {
@@ -253,13 +268,18 @@ func (c *Config) connStr(database string) string {
 		return connStr
 	}
 
+	if c.SSHTunnel != nil {
+		host = "127.0.0.1"
+		port = c.SSHTunnel.LocalPort
+	}
+
 	connStr := fmt.Sprintf(
 		"%s://%s:%s@%s:%d/%s?%s",
 		c.Scheme,
 		url.PathEscape(c.Username),
 		url.PathEscape(c.Password),
 		host,
-		c.Port,
+		port,
 		database,
 		strings.Join(c.connParams(), "&"),
 	)
@@ -281,6 +301,49 @@ func (c *Client) Connect() (*DBConnection, error) {
 	dbRegistryLock.Lock()
 	defer dbRegistryLock.Unlock()
 
+	if c.config.SSHTunnel != nil && c.tunnel == nil {
+		var auth ssh.AuthMethod
+		switch {
+		case c.config.SSHTunnel.UseAgent:
+			auth = sshtunnel.SSHAgent()
+		case c.config.SSHTunnel.Password != "":
+			auth = ssh.Password(c.config.SSHTunnel.Password)
+		case c.config.SSHTunnel.PrivateKey != "":
+			key, err := ssh.ParsePrivateKey([]byte(c.config.SSHTunnel.PrivateKey))
+			if err != nil {
+				return nil, fmt.Errorf("error while parsing ssh private key: %+v", err)
+			}
+			auth = ssh.PublicKeys(key)
+		default:
+			return nil, fmt.Errorf("error while authenticing to ssh dest: you must choose one of 'use_agent', 'password', 'private_key'")
+		}
+
+		tunnel, err := sshtunnel.NewSSHTunnel(
+			c.config.SSHTunnel.Destination,
+			auth,
+			fmt.Sprintf("%s:%d", c.config.Host, c.config.Port),
+			"0",
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf("error while opening ssh tunnel: %+v", err)
+		}
+
+		go func() {
+			err := tunnel.Start()
+			if err != nil {
+				panic(fmt.Sprintf("unable to start ssh tunnel %+v", err))
+			}
+			defer tunnel.Close()
+		}()
+
+		time.Sleep(100 * time.Millisecond)
+
+		c.config.SSHTunnel.LocalPort = tunnel.Local.Port
+		c.tunnel = tunnel
+
+	}
+
 	dsn := c.config.connStr(c.databaseName)
 	conn, found := dbRegistry[dsn]
 	if !found {
@@ -289,7 +352,11 @@ func (c *Client) Connect() (*DBConnection, error) {
 		var err error
 		switch c.config.Scheme {
 		case "postgres":
-			db, err = sql.Open(proxyDriverName, dsn)
+			if c.tunnel != nil {
+				db, err = sql.Open(c.config.Scheme, dsn)
+			} else {
+				db, err = sql.Open(proxyDriverName, dsn)
+			}
 		case "gcpalloydb":
 			db, err = sql.Open(c.config.Scheme, dsn)
 		default:
