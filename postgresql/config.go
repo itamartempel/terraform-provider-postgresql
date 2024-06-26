@@ -155,6 +155,13 @@ type ClientCertificateConfig struct {
 	SSLInline       bool
 }
 
+type SSHTunnelConfig struct {
+	Destination string
+	UseAgent    bool
+	Password    string
+	PrivateKey  string
+}
+
 // Config - provider config
 type Config struct {
 	Scheme            string
@@ -172,6 +179,7 @@ type Config struct {
 	ExpectedVersion   semver.Version
 	SSLClientCert     *ClientCertificateConfig
 	SSLRootCertPath   string
+	SSHTunnel         *SSHTunnelConfig
 }
 
 // Client struct holding connection string

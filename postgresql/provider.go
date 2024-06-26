@@ -178,8 +178,9 @@ func Provider() *schema.Provider {
 						},
 						"private_key": {
 							Type:        schema.TypeString,
-							Description: "Path to ssh private key",
+							Description: "ssh private key",
 							Optional:    true,
+							Sensitive:   true,
 						},
 						"password": {
 							Type:        schema.TypeString,
@@ -380,6 +381,17 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 				CertificatePath: spec["cert"].(string),
 				KeyPath:         spec["key"].(string),
 				SSLInline:       spec["sslinline"].(bool),
+			}
+		}
+	}
+
+	if value, ok := d.GetOk("ssh"); ok {
+		if spec, ok := value.([]interface{})[0].(map[string]interface{}); ok {
+			config.SSHTunnel = &SSHTunnelConfig{
+				Destination: spec["destination"].(string),
+				UseAgent:    spec["use_agent"].(bool),
+				Password:    spec["password"].(string),
+				PrivateKey:  spec["private_key"].(string),
 			}
 		}
 	}
