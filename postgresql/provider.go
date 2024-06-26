@@ -160,6 +160,37 @@ func Provider() *schema.Provider {
 				},
 				MaxItems: 1,
 			},
+			"ssh": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Description: "SSH tunneling configuration",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"destination": {
+							Type:        schema.TypeString,
+							Description: "SSH destination to tunnel through ( [user@]hostname[:port] )",
+							Required:    true,
+						},
+						"use_agent": {
+							Type:        schema.TypeBool,
+							Description: "Using ssh agent",
+							Optional:    true,
+						},
+						"private_key": {
+							Type:        schema.TypeString,
+							Description: "Path to ssh private key",
+							Optional:    true,
+						},
+						"password": {
+							Type:        schema.TypeString,
+							Description: "SSH user password",
+							Optional:    true,
+							Sensitive:   true,
+						},
+					},
+				},
+				MaxItems: 1,
+			},
 			"sslrootcert": {
 				Type:        schema.TypeString,
 				Description: "The SSL server root certificate file path. The file must contain PEM encoded data.",
